@@ -50,7 +50,10 @@ func (g *game) Update() error {
 	defer g.mx.Unlock()
 
 	_, dy := ebiten.Wheel()
-	g.scale += float64(dy)
+
+	currentScale := g.scale
+	g.scale += dy
+
 	if g.scale < 0.1 {
 		g.scale = 0.1
 	} else if g.scale > 100 {
@@ -68,6 +71,11 @@ func (g *game) Update() error {
 	} else {
 		g.cursorPositionX, g.cursorPositionY = ebiten.CursorPosition()
 	}
+
+	ratio := 1 - g.scale/currentScale
+	g.translateX += (float64(g.cursorPositionX) - g.translateX) * ratio
+	g.translateY += (float64(g.cursorPositionY) - g.translateY) * ratio
+
 	g.world.RunSystems()
 
 	g.screenBuffer = make([]byte, 4*width*height)
