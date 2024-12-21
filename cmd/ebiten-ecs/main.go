@@ -35,10 +35,14 @@ type game struct {
 	colorComponents     ecs.WorldComponents[color.RGBA]
 	transformComponents ecs.WorldComponents[transform]
 
-	imageBuffer  *ebiten.Image
-	debugImage   *ebiten.Image
-	screenBuffer []byte
-	scale        float64
+	imageBuffer     *ebiten.Image
+	debugImage      *ebiten.Image
+	screenBuffer    []byte
+	scale           float64
+	cursorPositionX int
+	cursorPositionY int
+	translateX      float64
+	translateY      float64
 }
 
 func (g *game) Update() error {
@@ -46,12 +50,32 @@ func (g *game) Update() error {
 	defer g.mx.Unlock()
 
 	_, dy := ebiten.Wheel()
-	g.scale += float64(dy)
+
+	currentScale := g.scale
+	g.scale += dy
+
 	if g.scale < 0.1 {
 		g.scale = 0.1
 	} else if g.scale > 100 {
 		g.scale = 100
 	}
+
+	isMouseButtonPressed := ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft)
+
+	if isMouseButtonPressed {
+		currentMouseX, currentMouseY := ebiten.CursorPosition()
+		g.translateX += float64(currentMouseX - g.cursorPositionX)
+		g.translateY += float64(currentMouseY - g.cursorPositionY)
+		g.cursorPositionX = currentMouseX
+		g.cursorPositionY = currentMouseY
+	} else {
+		g.cursorPositionX, g.cursorPositionY = ebiten.CursorPosition()
+	}
+
+	ratio := 1 - g.scale/currentScale
+	g.translateX += (float64(g.cursorPositionX) - g.translateX) * ratio
+	g.translateY += (float64(g.cursorPositionY) - g.translateY) * ratio
+
 	g.world.RunSystems()
 
 	g.screenBuffer = make([]byte, 4*width*height)
@@ -100,6 +124,7 @@ func (g *game) Draw(screen *ebiten.Image) {
 
 	op := new(ebiten.DrawImageOptions)
 	op.GeoM.Scale(g.scale, g.scale)
+	op.GeoM.Translate(g.translateX, g.translateY)
 	screen.DrawImage(g.imageBuffer, op)
 
 	op.GeoM.Reset()
