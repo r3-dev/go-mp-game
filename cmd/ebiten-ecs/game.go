@@ -71,6 +71,7 @@ func (g *game) Draw(screen *ebiten.Image) {
 
 	g.op.GeoM.Reset()
 	g.op.GeoM.Scale(mainCamera.mainLayer.zoom, mainCamera.mainLayer.zoom)
+	g.op.GeoM.Translate(mainCamera.mainLayer.translateX, mainCamera.mainLayer.translateY)
 	screen.DrawImage(mainCamera.mainLayer.image, g.op)
 
 	g.op.GeoM.Reset()

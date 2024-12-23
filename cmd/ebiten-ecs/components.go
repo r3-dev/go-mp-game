@@ -25,8 +25,10 @@ type movement struct {
 }
 
 type cameraLayer struct {
-	image *ebiten.Image
-	zoom  float64
+	image      *ebiten.Image
+	zoom       float64
+	translateX float64
+	translateY float64
 }
 type camera struct {
 	mainLayer  cameraLayer

@@ -30,6 +30,8 @@ type cameraSystem struct {
 	screenBuffer []byte
 	debugInfo    []string
 	p            *message.Printer
+
+	cursorPositionX, cursorPositionY int
 }
 
 func (s *cameraSystem) Init(world *ecs.World) {
@@ -45,8 +47,10 @@ func (s *cameraSystem) Init(world *ecs.World) {
 	newcamera := world.CreateEntity("camera")
 	s.cameraComponent.Set(newcamera, camera{
 		mainLayer: cameraLayer{
-			image: ebiten.NewImage(width, height),
-			zoom:  1,
+			image:      ebiten.NewImage(width, height),
+			zoom:       1,
+			translateX: 0,
+			translateY: 0,
 		},
 		debugLayer: cameraLayer{
 			image: ebiten.NewImage(width, height),
@@ -86,6 +90,7 @@ func (s *cameraSystem) Run(world *ecs.World) {
 	mainCamera.mainLayer.image.Clear()
 	mainCamera.debugLayer.image.Clear()
 
+	mainCameraCurrentZoom := mainCamera.mainLayer.zoom
 	mainCamera.mainLayer.zoom += float64(dy)
 	mainCamera.mainLayer.image.WritePixels(s.screenBuffer)
 	clear(s.screenBuffer)
@@ -95,6 +100,21 @@ func (s *cameraSystem) Run(world *ecs.World) {
 	} else if mainCamera.mainLayer.zoom > 100 {
 		mainCamera.mainLayer.zoom = 100
 	}
+
+	currentMouseX, currentMouseY := ebiten.CursorPosition()
+	isMouseButtonPressed := ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft)
+
+	if isMouseButtonPressed {
+		mainCamera.mainLayer.translateX += float64(currentMouseX - s.cursorPositionX)
+		mainCamera.mainLayer.translateY += float64(currentMouseY - s.cursorPositionY)
+	}
+
+	s.cursorPositionX = currentMouseX
+	s.cursorPositionY = currentMouseY
+
+	ratio := 1 - mainCamera.mainLayer.zoom/mainCameraCurrentZoom
+	mainCamera.mainLayer.translateX += (float64(s.cursorPositionX) - mainCamera.mainLayer.translateX) * ratio
+	mainCamera.mainLayer.translateY += (float64(s.cursorPositionY) - mainCamera.mainLayer.translateY) * ratio
 
 	s.debugInfo = append(s.debugInfo, fmt.Sprintf("TPS %0.2f", ebiten.ActualTPS()))
 	s.debugInfo = append(s.debugInfo, fmt.Sprintf("FPS %0.2f", ebiten.ActualFPS()))
