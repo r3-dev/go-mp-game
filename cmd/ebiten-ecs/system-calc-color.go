@@ -21,8 +21,8 @@ func (s *systemCalcColor) Init(world *ClientWorld) {
 func (s *systemCalcColor) Run(world *ClientWorld) {
 	components := world.Components
 
-	components.color.AllParallel(func(ei ecs.EntityID, c *color.RGBA) bool {
-		health := components.health.Get(ei)
+	components.Color.AllParallel(func(ei ecs.EntityID, c *color.RGBA) bool {
+		health := components.Health.Get(ei)
 		if health == nil {
 			return true
 		}

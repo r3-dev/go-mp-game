@@ -40,7 +40,7 @@ func (s *systemSpawn) Run(world *ClientWorld) {
 				y: rand.Int31n(1000),
 			}
 
-			world.Components.transform.Create(newCreature, t)
+			world.Components.Transform.Create(newCreature, t)
 
 			maxHp := minMaxHp + rand.Int31n(maxMaxHp-minMaxHp)
 			hp := int32(float32(maxHp) * float32(minHpPercentage+rand.Int31n(100-minHpPercentage)) / 100)
@@ -50,7 +50,7 @@ func (s *systemSpawn) Run(world *ClientWorld) {
 				maxHp: maxHp,
 			}
 
-			world.Components.health.Create(newCreature, h)
+			world.Components.Health.Create(newCreature, h)
 
 			c := color.RGBA{
 				R: 0,
@@ -59,7 +59,7 @@ func (s *systemSpawn) Run(world *ClientWorld) {
 				A: 0,
 			}
 
-			world.Components.color.Create(newCreature, c)
+			world.Components.Color.Create(newCreature, c)
 		}
 	}
 

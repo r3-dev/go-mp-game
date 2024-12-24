@@ -30,8 +30,8 @@ type systemDraw struct {
 func (s *systemDraw) Init(world *ClientWorld) {
 	s.p = message.NewPrinter(language.Russian)
 
-	newcamera := world.CreateEntity("camera")
-	world.Components.camera.Create(newcamera, camera{
+	newcamera := world.CreateEntity("Camera")
+	world.Components.Camera.Create(newcamera, camera{
 		mainLayer: cameraLayer{
 			image: ebiten.NewImage(width, height),
 			zoom:  1,
@@ -53,23 +53,23 @@ func (s *systemDraw) Run(world *ClientWorld, screen *ebiten.Image) {
 
 	draw.Draw(s.buffer, s.buffer.Bounds(), &image.Uniform{color.Transparent}, image.Point{}, draw.Src)
 
-	components.color.AllParallel(func(entity ecs.EntityID, color *color.RGBA) bool {
+	components.Color.AllParallel(func(entity ecs.EntityID, color *color.RGBA) bool {
 		if color == nil {
 			return true
 		}
 
-		transform := components.transform.Get(entity)
+		transform := components.Transform.Get(entity)
 
 		s.buffer.SetRGBA(int(transform.x), int(transform.y), *color)
 		return true
 	})
 
 	var mainCamera *camera
-	components.camera.AllData(func(c *camera) bool {
+	components.Camera.AllData(func(c *camera) bool {
 		mainCamera = c
 		return false
 	})
-	assert.True(mainCamera != nil, "No camera found")
+	assert.True(mainCamera != nil, "No Camera found")
 
 	mainCamera.mainLayer.image.Clear()
 	mainCamera.debugLayer.image.Clear()
@@ -87,12 +87,12 @@ func (s *systemDraw) Run(world *ClientWorld, screen *ebiten.Image) {
 	s.debugInfo = append(s.debugInfo, fmt.Sprintf("FPS %0.2f", ebiten.ActualFPS()))
 	s.debugInfo = append(s.debugInfo, fmt.Sprintf("Zoom %0.2f", mainCamera.mainLayer.zoom))
 	s.debugInfo = append(s.debugInfo, s.p.Sprintf("Entity count %d", world.Size()))
-	s.debugInfo = append(s.debugInfo, s.p.Sprintf("Transforms count %d", components.transform.Len()))
-	s.debugInfo = append(s.debugInfo, s.p.Sprintf("Healths count %d", components.health.Len()))
-	s.debugInfo = append(s.debugInfo, s.p.Sprintf("Colors count %d", components.color.Len()))
-	s.debugInfo = append(s.debugInfo, s.p.Sprintf("Cameras count %d", components.camera.Len()))
-	s.debugInfo = append(s.debugInfo, s.p.Sprintf("Destroys count %d", components.destroy.Len()))
-	s.debugInfo = append(s.debugInfo, s.p.Sprintf("Pprof %d", systems.spawn.pprofEnabled))
+	s.debugInfo = append(s.debugInfo, s.p.Sprintf("Transforms count %d", components.Transform.Len()))
+	s.debugInfo = append(s.debugInfo, s.p.Sprintf("Healths count %d", components.Health.Len()))
+	s.debugInfo = append(s.debugInfo, s.p.Sprintf("Colors count %d", components.Color.Len()))
+	s.debugInfo = append(s.debugInfo, s.p.Sprintf("Cameras count %d", components.Camera.Len()))
+	s.debugInfo = append(s.debugInfo, s.p.Sprintf("Destroys count %d", components.Destroy.Len()))
+	s.debugInfo = append(s.debugInfo, s.p.Sprintf("Pprof %d", systems.Spawn.pprofEnabled))
 
 	ebitenutil.DebugPrint(mainCamera.debugLayer.image, strings.Join(s.debugInfo, "\n"))
 	s.debugInfo = s.debugInfo[:0]

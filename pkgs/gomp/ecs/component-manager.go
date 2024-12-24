@@ -22,8 +22,8 @@ type ComponentManager[T any] struct {
 	ID            ComponentID
 }
 
-func CreateComponentManager[T any](id ComponentID) ComponentManager[T] {
-	return ComponentManager[T]{
+func CreateComponentManager[T any](id ComponentID) *ComponentManager[T] {
+	return &ComponentManager[T]{
 		data:          make([]T, 0, preallocatedCapacity),
 		entities:      make([]EntityID, 0, preallocatedCapacity),
 		lookup:        haxmap.New[EntityID, int](preallocatedCapacity),

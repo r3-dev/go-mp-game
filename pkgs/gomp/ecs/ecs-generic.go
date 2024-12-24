@@ -43,7 +43,7 @@ func CreateGenericWorld[T any, S any](id ECSID, components *T, systems *S) Gener
 		Systems:             systems,
 		wg:                  new(sync.WaitGroup),
 		deletedEntityIDs:    make([]EntityID, 0, PREALLOC_DELETED_ENTITIES),
-		entityComponentMask: &maskSet,
+		entityComponentMask: maskSet,
 	}
 
 	return ecs

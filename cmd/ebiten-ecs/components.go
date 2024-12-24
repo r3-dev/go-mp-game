@@ -41,10 +41,10 @@ type destroy struct{}
 
 // spawn creature every tick with random hp and position
 // each creature looses hp every tick
-// each creature has color that depends on its own maxHP and current hp
+// each creature has Color that depends on its own maxHP and current hp
 // when hp == 0 creature dies
 
 // spawn system
 // movement system
 // hp system
-// destroy system
+// Destroy system

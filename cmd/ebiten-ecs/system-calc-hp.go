@@ -14,11 +14,11 @@ type systemCalcHp struct{}
 
 func (s *systemCalcHp) Init(world *ClientWorld) {}
 func (s *systemCalcHp) Run(world *ClientWorld) {
-	world.Components.health.AllParallel(func(entity ecs.EntityID, h *health) bool {
+	world.Components.Health.AllParallel(func(entity ecs.EntityID, h *health) bool {
 		h.hp--
 
 		if h.hp <= 0 {
-			world.Components.destroy.Create(entity, struct{}{})
+			world.Components.Destroy.Create(entity, struct{}{})
 		}
 
 		return true

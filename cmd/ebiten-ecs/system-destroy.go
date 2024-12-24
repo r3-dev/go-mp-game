@@ -17,7 +17,7 @@ type systemDestroyRemovedEntities struct {
 func (s *systemDestroyRemovedEntities) Init(world *ClientWorld) {}
 func (s *systemDestroyRemovedEntities) Run(world *ClientWorld) {
 	s.n = 0
-	world.Components.destroy.All(func(e ecs.EntityID, h *destroy) bool {
+	world.Components.Destroy.All(func(e ecs.EntityID, h *destroy) bool {
 		world.DestroyEntity(e)
 		return true
 	})
