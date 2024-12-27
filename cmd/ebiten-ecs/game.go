@@ -46,24 +46,8 @@ type clientSystems struct {
 }
 
 func newGameClient() (c client) {
-	// TODO: move initializing components with reflect inside CreateGenericWorld() function?
-	// Create component managers
-	components := clientComponents{
-		sharedComponents: sharedComponents{
-			Health:    ecs.CreateComponentManager[health](HEALTH_COMPONENT_ID),
-			Destroy:   ecs.CreateComponentManager[destroy](DESTROY_COMPONENT_ID),
-			Transform: ecs.CreateComponentManager[transform](TRANSFORM_COMPONENT_ID),
-		},
-
-		Color:  ecs.CreateComponentManager[color.RGBA](COLOR_COMPONENT_ID),
-		Camera: ecs.CreateComponentManager[camera](CAMERA_COMPONENT_ID),
-	}
-
-	// Create systems
-	systems := new(clientSystems)
-
 	// Create world and register components and systems
-	world := ecs.CreateGenericWorld(0, &components, systems)
+	world := ecs.CreateGenericWorld(0, new(clientComponents), new(clientSystems))
 
 	newClient := client{
 		world: &world,

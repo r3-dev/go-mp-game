@@ -21,14 +21,19 @@ type ComponentManager[T any] struct {
 	ID            ComponentID
 }
 
-func CreateComponentManager[T any](id ComponentID) *ComponentManager[T] {
-	return &ComponentManager[T]{
-		components:    make([]T, 0, preallocatedCapacity),
-		entities:      make([]EntityID, 0, preallocatedCapacity),
-		lookup:        NewPagedMap[EntityID, int](),
-		isInitialized: true,
-		ID:            id,
-	}
+func CreateComponentManager[T any]() *ComponentManager[T] {
+	inst := &ComponentManager[T]{}
+	inst.Init()
+	return inst
+}
+
+func (c *ComponentManager[T]) Init() {
+	// (aled93): Init need for reflection because calling generic function
+	// using reflection isn't possible as I know
+	c.components = make([]T, 0, preallocatedCapacity)
+	c.entities = make([]EntityID, 0, preallocatedCapacity)
+	c.lookup = NewPagedMap[EntityID, int]()
+	c.isInitialized = true
 }
 
 func (c *ComponentManager[T]) registerComponentMask(mask *ComponentManager[ComponentBitArray256]) {

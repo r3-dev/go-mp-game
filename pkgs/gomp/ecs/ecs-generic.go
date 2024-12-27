@@ -15,8 +15,6 @@ import (
 	"github.com/negrel/assert"
 )
 
-const ENTITY_COMPONENT_MASK_ID ComponentID = 1<<8 - 1
-
 type GenericWorld[T any, S any] struct {
 	Components *T
 	Systems    *S
@@ -37,7 +35,8 @@ type GenericWorld[T any, S any] struct {
 }
 
 func CreateGenericWorld[C any, US any](id ECSID, components *C, systems *US) GenericWorld[C, US] {
-	maskSet := CreateComponentManager[ComponentBitArray256](ENTITY_COMPONENT_MASK_ID)
+	maskSet := CreateComponentManager[ComponentBitArray256]()
+	maskSet.ID = ENTITY_COMPONENT_MASK_ID
 	ecs := GenericWorld[C, US]{
 		ID:                  id,
 		Components:          components,
@@ -49,7 +48,7 @@ func CreateGenericWorld[C any, US any](id ECSID, components *C, systems *US) Gen
 
 	// Register components
 	ecs.registerComponents(
-		ecs.findComponentsFromStructRecursevly(reflect.ValueOf(components).Elem(), nil)...,
+		ecs.findComponentsFromStructRecursevly(reflect.ValueOf(components).Elem(), nil, nil)...,
 	)
 
 	// Register systems
@@ -60,18 +59,33 @@ func CreateGenericWorld[C any, US any](id ECSID, components *C, systems *US) Gen
 	return ecs
 }
 
-func (e *GenericWorld[T, S]) findComponentsFromStructRecursevly(structValue reflect.Value, componentList []AnyComponentInstancesPtr) []AnyComponentInstancesPtr {
+func (e *GenericWorld[T, S]) findComponentsFromStructRecursevly(structValue reflect.Value, componentList []AnyComponentInstancesPtr, freeCompId *ComponentID) []AnyComponentInstancesPtr {
 	compsType := structValue.Type()
 	anyCompInstPtrType := reflect.TypeFor[AnyComponentInstancesPtr]()
 
+	var compId ComponentID = 0
+	if freeCompId == nil {
+		freeCompId = &compId
+	}
+
 	for i := range compsType.NumField() {
+		if *freeCompId == MAX_COMPONENTS_COUNT {
+			panic("too many component types")
+		}
+
 		fld := compsType.Field(i)
 		fldVal := structValue.FieldByIndex(fld.Index)
 
-		if fld.Type.Implements(anyCompInstPtrType) {
+		// check for pointer and struct to ensure that type is instantiable
+		if fld.Type.Kind() == reflect.Pointer && fld.Type.Elem().Kind() == reflect.Struct && fld.Type.Implements(anyCompInstPtrType) {
+			ptr := reflect.New(fld.Type.Elem())
+			fldVal.Set(ptr)
+			ptr.Elem().FieldByName("ID").Set(reflect.ValueOf(*freeCompId))
+			ptr.MethodByName("Init").Call([]reflect.Value{})
+			*freeCompId++
 			componentList = append(componentList, fldVal.Interface().(AnyComponentInstancesPtr))
 		} else if fld.Anonymous && fld.Type.Kind() == reflect.Struct {
-			componentList = e.findComponentsFromStructRecursevly(fldVal, componentList)
+			componentList = e.findComponentsFromStructRecursevly(fldVal, componentList, freeCompId)
 		}
 	}
 
