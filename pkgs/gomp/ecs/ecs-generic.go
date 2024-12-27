@@ -48,18 +48,18 @@ func CreateGenericWorld[C any, US any](id ECSID, components *C, systems *US) Gen
 
 	// Register components
 	ecs.registerComponents(
-		ecs.findComponentsFromStructRecursevly(reflect.ValueOf(components).Elem(), nil, nil)...,
+		ecs.findComponentsFromStructRecursively(reflect.ValueOf(components).Elem(), nil, nil)...,
 	)
 
 	// Register systems
-	updSystems, drawSystems := ecs.findSystemsFromStructRecursevly(reflect.ValueOf(systems).Elem(), nil, nil)
+	updSystems, drawSystems := ecs.findSystemsFromStructRecursively(reflect.ValueOf(systems).Elem(), nil, nil)
 	ecs.registerUpdateSystems().Sequential(updSystems...)
 	ecs.registerDrawSystems().Sequential(drawSystems...)
 
 	return ecs
 }
 
-func (e *GenericWorld[T, S]) findComponentsFromStructRecursevly(structValue reflect.Value, componentList []AnyComponentInstancesPtr, freeCompId *ComponentID) []AnyComponentInstancesPtr {
+func (e *GenericWorld[T, S]) findComponentsFromStructRecursively(structValue reflect.Value, componentList []AnyComponentInstancesPtr, freeCompId *ComponentID) []AnyComponentInstancesPtr {
 	compsType := structValue.Type()
 	anyCompInstPtrType := reflect.TypeFor[AnyComponentInstancesPtr]()
 
@@ -85,14 +85,14 @@ func (e *GenericWorld[T, S]) findComponentsFromStructRecursevly(structValue refl
 			*freeCompId++
 			componentList = append(componentList, fldVal.Interface().(AnyComponentInstancesPtr))
 		} else if fld.Anonymous && fld.Type.Kind() == reflect.Struct {
-			componentList = e.findComponentsFromStructRecursevly(fldVal, componentList, freeCompId)
+			componentList = e.findComponentsFromStructRecursively(fldVal, componentList, freeCompId)
 		}
 	}
 
 	return componentList
 }
 
-func (e *GenericWorld[T, S]) findSystemsFromStructRecursevly(
+func (e *GenericWorld[T, S]) findSystemsFromStructRecursively(
 	structValue reflect.Value,
 	systemUpdList []AnyUpdateSystem[GenericWorld[T, S]],
 	systemDrawList []AnyDrawSystem[GenericWorld[T, S]],
@@ -106,7 +106,7 @@ func (e *GenericWorld[T, S]) findSystemsFromStructRecursevly(
 		fldVal := structValue.FieldByIndex(fld.Index)
 
 		if fld.Anonymous && fld.Type.Kind() == reflect.Struct {
-			systemUpdList, systemDrawList = e.findSystemsFromStructRecursevly(fldVal, systemUpdList, systemDrawList)
+			systemUpdList, systemDrawList = e.findSystemsFromStructRecursively(fldVal, systemUpdList, systemDrawList)
 		} else if fld.Type.Kind() == reflect.Pointer {
 			if fld.Type.Implements(anyUpdateSysType) {
 				ptr := reflect.New(fld.Type.Elem())
