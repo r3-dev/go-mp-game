@@ -7,7 +7,10 @@ with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 package ecs
 
 import (
+	"fmt"
+	"math/big"
 	"reflect"
+	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -59,17 +62,16 @@ func CreateGenericWorld[C any, US any](id ECSID, components *C, systems *US) Gen
 	return ecs
 }
 
-func (e *GenericWorld[T, S]) findComponentsFromStructRecursively(structValue reflect.Value, componentList []AnyComponentInstancesPtr, freeCompId *ComponentID) []AnyComponentInstancesPtr {
+func (e *GenericWorld[T, S]) findComponentsFromStructRecursively(structValue reflect.Value, componentList []AnyComponentInstancesPtr, occupiedIds *big.Int) []AnyComponentInstancesPtr {
 	compsType := structValue.Type()
 	anyCompInstPtrType := reflect.TypeFor[AnyComponentInstancesPtr]()
 
-	var compId ComponentID = 0
-	if freeCompId == nil {
-		freeCompId = &compId
+	if occupiedIds == nil {
+		occupiedIds = big.NewInt(0)
 	}
 
 	for i := range compsType.NumField() {
-		if *freeCompId == MAX_COMPONENTS_COUNT {
+		if len(componentList) >= MAX_COMPONENTS_COUNT {
 			panic("too many component types")
 		}
 
@@ -78,14 +80,27 @@ func (e *GenericWorld[T, S]) findComponentsFromStructRecursively(structValue ref
 
 		// check for pointer and struct to ensure that type is instantiable
 		if fld.Type.Kind() == reflect.Pointer && fld.Type.Elem().Kind() == reflect.Struct && fld.Type.Implements(anyCompInstPtrType) {
+			var id ComponentID
+			if idStr, ok := fld.Tag.Lookup("id"); !ok {
+				panic(fmt.Sprintf("field %s in type %s doesn't have tag id", fld.Name, compsType.String()))
+			} else if v, err := strconv.Atoi(idStr); err != nil {
+				panic(fmt.Sprintf("field %s in type %s has invalid value \"%s\"", fld.Name, compsType.String(), idStr))
+			} else if v < COMPONENT_ID_RANGE_LO || v > COMPONENT_ID_RANGE_HI {
+				panic(fmt.Sprintf("field %s in type %s has id out of range (got %d, allowed [%d..%d])", fld.Name, compsType.String(), v, COMPONENT_ID_RANGE_LO, COMPONENT_ID_RANGE_HI))
+			} else if occupiedIds.Bit(v) != 0 {
+				panic(fmt.Sprintf("field %s in type %s has id conflict", fld.Name, compsType.String()))
+			} else {
+				id = ComponentID(v)
+				occupiedIds = occupiedIds.SetBit(occupiedIds, v, 1)
+			}
+
 			ptr := reflect.New(fld.Type.Elem())
 			fldVal.Set(ptr)
-			ptr.Elem().FieldByName("ID").Set(reflect.ValueOf(*freeCompId))
+			ptr.Elem().FieldByName("ID").Set(reflect.ValueOf(id))
 			ptr.MethodByName("Init").Call([]reflect.Value{})
-			*freeCompId++
 			componentList = append(componentList, fldVal.Interface().(AnyComponentInstancesPtr))
 		} else if fld.Anonymous && fld.Type.Kind() == reflect.Struct {
-			componentList = e.findComponentsFromStructRecursively(fldVal, componentList, freeCompId)
+			componentList = e.findComponentsFromStructRecursively(fldVal, componentList, occupiedIds)
 		}
 	}
 

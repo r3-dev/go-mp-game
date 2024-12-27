@@ -20,9 +20,9 @@ type client struct {
 }
 
 type sharedComponents struct {
-	Destroy   *ecs.ComponentManager[destroy]
-	Transform *ecs.ComponentManager[transform]
-	Health    *ecs.ComponentManager[health]
+	Destroy   *ecs.ComponentManager[destroy]   `id:"0"`
+	Transform *ecs.ComponentManager[transform] `id:"1"`
+	Health    *ecs.ComponentManager[health]    `id:"2"`
 }
 
 type sharedSystems struct {
@@ -34,8 +34,8 @@ type sharedSystems struct {
 type clientComponents struct {
 	sharedComponents
 
-	Color  *ecs.ComponentManager[color.RGBA]
-	Camera *ecs.ComponentManager[camera]
+	Color  *ecs.ComponentManager[color.RGBA] `id:"3"`
+	Camera *ecs.ComponentManager[camera]     `id:"4"`
 }
 
 type clientSystems struct {
