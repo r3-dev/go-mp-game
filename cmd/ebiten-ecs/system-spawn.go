@@ -31,8 +31,8 @@ const (
 func (s *systemSpawn) Init(world *ClientWorld) {}
 func (s *systemSpawn) Run(world *ClientWorld) {
 	if ebiten.IsKeyPressed(ebiten.KeySpace) {
-		for range rand.Intn(1000) {
-			if world.Size() > 100_000 {
+		for range rand.Intn(10000) {
+			if world.Size() > 100_000_000 {
 				break
 			}
 

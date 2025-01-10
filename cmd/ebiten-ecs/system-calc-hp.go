@@ -18,7 +18,7 @@ func (s *systemCalcHp) Run(world *ClientWorld) {
 		h.hp--
 
 		if h.hp <= 0 {
-			world.Components.Destroy.Create(entity, struct{}{})
+			world.Components.Destroy.Create(entity, destroy{})
 		}
 
 		return true

@@ -7,21 +7,23 @@ with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 package ecs
 
 import (
+	"iter"
+	"math/big"
+	"sync"
+
 	"github.com/negrel/assert"
 )
 
-const preallocatedCapacity = 1 << 14
-
 type ComponentManager[T any] struct {
-	components    []T
-	entities      []EntityID
-	lookup        *PagedMap[EntityID, int]
-	worldMask     *ComponentManager[ComponentBitArray256]
-	isInitialized bool
+	mx            *sync.Mutex
+	components    *PagedArray[T]
+	entities      *PagedArray[EntityID]
+	lookup        *PagedMap[EntityID, int32]
 	ID            ComponentID
+	isInitialized bool
 }
 
-func CreateComponentManager[T any]() *ComponentManager[T] {
+func CreateComponentManager[T any](id ComponentID) *ComponentManager[T] {
 	inst := &ComponentManager[T]{}
 	inst.Init()
 	return inst
@@ -30,21 +32,29 @@ func CreateComponentManager[T any]() *ComponentManager[T] {
 func (c *ComponentManager[T]) Init() {
 	// (aled93): Init need for reflection because calling generic function
 	// using reflection isn't possible as I know
-	c.components = make([]T, 0, preallocatedCapacity)
-	c.entities = make([]EntityID, 0, preallocatedCapacity)
-	c.lookup = NewPagedMap[EntityID, int]()
+	if c.isInitialized {
+		return
+	}
+
+	c.components = NewPagedArray[T]()
+	c.entities = NewPagedArray[EntityID]()
+	c.lookup = NewPagedMap[EntityID, int32]()
 	c.isInitialized = true
+	c.mx = new(sync.Mutex)
 }
 
-func (c *ComponentManager[T]) registerComponentMask(mask *ComponentManager[ComponentBitArray256]) {
-	c.worldMask = mask
+func (c *ComponentManager[T]) registerComponentMask(mask *ComponentManager[big.Int]) {
+	// c.worldMask = mask
 }
 
 func (c *ComponentManager[T]) getId() ComponentID {
 	return c.ID
 }
 
-func (c *ComponentManager[T]) Create(entity EntityID, value T) *T {
+func (c *ComponentManager[T]) Create(entity EntityID, value T) (returnValue *T) {
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
 	// ComponentManager must be initialized with CreateComponentManager()
 	assert.True(c.isInitialized)
 
@@ -52,25 +62,17 @@ func (c *ComponentManager[T]) Create(entity EntityID, value T) *T {
 	assert.True(entity != -1)
 
 	// Only one of component per enity allowed!
-	assert.False(c.lookUpHas(entity))
+	assert.False(c.Has(entity))
 
 	// Entity Count must always be the same as the number of components!
-	assert.True(len(c.entities) == len(c.components))
-	assert.True(len(c.components) == int(c.lookup.Len()))
+	assert.True(c.entities.Len() == c.components.Len())
+	assert.True(c.components.Len() == c.lookup.Len())
 
-	var index = len(c.components)
+	var index = c.components.Len()
 
 	c.lookup.Set(entity, index)
-
-	c.components = append(c.components, value)
-	c.entities = append(c.entities, entity)
-
-	if c.ID != ENTITY_COMPONENT_MASK_ID {
-		mask := c.worldMask.Get(entity)
-		mask.Set(c.ID)
-	}
-
-	return &c.components[index]
+	c.entities.Append(entity)
+	return c.components.Append(value)
 }
 
 func (c *ComponentManager[T]) Get(entity EntityID) *T {
@@ -85,10 +87,13 @@ func (c *ComponentManager[T]) Get(entity EntityID) *T {
 		return nil
 	}
 
-	return &c.components[index]
+	return c.components.Get(index)
 }
 
 func (c *ComponentManager[T]) Remove(entity EntityID) {
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
 	// ComponentManager must be initialized with CreateComponentManager()
 	assert.True(c.isInitialized)
 
@@ -96,32 +101,35 @@ func (c *ComponentManager[T]) Remove(entity EntityID) {
 	assert.False(entity == -1)
 
 	// ENTITY HAS NO COMPONENT!
-	assert.True(c.lookUpHas(entity))
+	assert.True(c.Has(entity))
 
 	index, _ := c.lookup.Get(entity)
 
-	lastIndex := len(c.components) - 1
+	lastIndex := c.components.Len() - 1
 	if index < lastIndex {
 		// Swap the the dead element with the last one
-		c.components[index] = c.components[lastIndex]
-		c.entities[index] = c.entities[lastIndex]
+		c.components.Swap(index, lastIndex)
+		newSwappedEntityId, _ := c.entities.Swap(index, lastIndex)
+		assert.True(newSwappedEntityId != nil)
 
 		// Update the lookup table
-		c.lookup.Set(c.entities[index], index)
+		c.lookup.Set(*newSwappedEntityId, index)
 	}
 
 	// Shrink the container
-	newComponentSize := len(c.components) - 1
-	c.components = c.components[:newComponentSize]
-
-	newEntitiesSize := len(c.entities) - 1
-	c.entities = c.entities[:newEntitiesSize]
+	c.components.SoftReduce()
+	c.entities.SoftReduce()
 
 	c.lookup.Delete(entity)
 
 	// Entity Count must always be the same as the number of components!
-	assert.True(len(c.entities) == len(c.components))
-	assert.True(len(c.components) == int(c.lookup.Len()))
+	assert.True(c.entities.Len() == c.components.Len())
+	assert.True(c.components.Len() == c.lookup.Len())
+}
+
+func (c *ComponentManager[T]) Has(entity EntityID) bool {
+	_, ok := c.lookup.Get(entity)
+	return ok
 }
 
 func (c *ComponentManager[T]) All(yield func(EntityID, *T) bool) {
@@ -129,13 +137,28 @@ func (c *ComponentManager[T]) All(yield func(EntityID, *T) bool) {
 	assert.True(c.isInitialized)
 
 	// Entity Count must always be the same as the number of components!
-	assert.True(len(c.entities) == len(c.components))
-	assert.True(len(c.components) == c.lookup.Len())
+	assert.True(c.entities.Len() == c.components.Len())
+	assert.True(c.components.Len() == c.lookup.Len())
 
-	for index := len(c.components) - 1; index >= 0; index-- {
-		id := c.entities[index]
-		value := &c.components[index]
-		if !yield(id, value) {
+	nextData, stopData := iter.Pull(c.components.AllData)
+	defer stopData()
+
+	nextEntity, stopEntity := iter.Pull(c.entities.AllData)
+	defer stopEntity()
+
+	for {
+		data, ok := nextData()
+		if !ok {
+			break
+		}
+		entityId, ok := nextEntity()
+		if !ok {
+			break
+		}
+		assert.True(entityId != nil)
+		entId := *entityId
+		shouldContinue := yield(entId, data)
+		if !shouldContinue {
 			break
 		}
 	}
@@ -146,16 +169,14 @@ func (c *ComponentManager[T]) AllParallel(yield func(EntityID, *T) bool) {
 	assert.True(c.isInitialized)
 
 	// Entity Count must always be the same as the number of components!
-	assert.True(len(c.entities) == len(c.components))
-	assert.True(len(c.components) == int(c.lookup.Len()))
+	assert.True(c.entities.Len() == c.components.Len())
+	assert.True(c.components.Len() == c.lookup.Len())
 
-	for index := len(c.components) - 1; index >= 0; index-- {
-		id := c.entities[index]
-		value := &c.components[index]
-		if !yield(id, value) {
-			break
-		}
-	}
+	c.components.AllParallel(func(i int32, t *T) bool {
+		entId := c.entities.Get(i)
+		assert.True(entId != nil)
+		return yield(*entId, t)
+	})
 }
 
 func (c *ComponentManager[T]) AllData(yield func(*T) bool) {
@@ -163,15 +184,10 @@ func (c *ComponentManager[T]) AllData(yield func(*T) bool) {
 	assert.True(c.isInitialized)
 
 	// Entity Count must always be the same as the number of components!
-	assert.True(len(c.entities) == len(c.components))
-	assert.True(len(c.components) == int(c.lookup.Len()))
+	assert.True(c.entities.Len() == c.components.Len())
+	assert.True(c.components.Len() == c.lookup.Len())
 
-	for index := len(c.components) - 1; index >= 0; index-- {
-		value := &c.components[index]
-		if !yield(value) {
-			break
-		}
-	}
+	c.components.AllData(yield)
 }
 
 func (c *ComponentManager[T]) AllDataParallel(yield func(*T) bool) {
@@ -179,32 +195,20 @@ func (c *ComponentManager[T]) AllDataParallel(yield func(*T) bool) {
 	assert.True(c.isInitialized)
 
 	// Entity Count must always be the same as the number of components!
-	assert.True(len(c.entities) == len(c.components))
-	assert.True(len(c.components) == int(c.lookup.Len()))
+	assert.True(c.entities.Len() == c.components.Len())
+	assert.True(c.components.Len() == c.lookup.Len())
 
-	for index := len(c.components) - 1; index >= 0; index-- {
-		value := &c.components[index]
-		if !yield(value) {
-			break
-		}
-	}
+	c.components.AllDataParallel(yield)
 }
 
-func (c *ComponentManager[T]) Len() int {
+func (c *ComponentManager[T]) Len() int32 {
 	// ComponentManager must be initialized with CreateComponentManager()
 	assert.True(c.isInitialized)
 
-	return len(c.components)
+	return c.components.Len()
 }
 
 func (c *ComponentManager[T]) Clean() {
-	// TODO
-}
-
-func (c ComponentManager[T]) lookUpHas(key EntityID) bool {
-	// ComponentManager must be initialized with CreateComponentManager()
-	assert.True(c.isInitialized)
-
-	_, ok := c.lookup.Get(key)
-	return ok
+	// c.components.Clean()
+	// c.entities.Clean()
 }

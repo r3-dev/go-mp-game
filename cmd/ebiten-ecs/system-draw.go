@@ -93,6 +93,7 @@ func (s *systemDraw) Run(world *ClientWorld, screen *ebiten.Image) {
 	s.debugInfo = append(s.debugInfo, s.p.Sprintf("Cameras count %d", components.Camera.Len()))
 	s.debugInfo = append(s.debugInfo, s.p.Sprintf("Destroys count %d", components.Destroy.Len()))
 	s.debugInfo = append(s.debugInfo, s.p.Sprintf("Pprof %d", systems.Spawn.pprofEnabled))
+	s.debugInfo = append(s.debugInfo, s.p.Sprintf("lastEntityId %d", world.LastEntityID))
 
 	ebitenutil.DebugPrint(mainCamera.debugLayer.image, strings.Join(s.debugInfo, "\n"))
 	s.debugInfo = s.debugInfo[:0]

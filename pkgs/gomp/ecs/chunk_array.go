@@ -114,10 +114,11 @@ func (a *ChunkArray[T]) Copy(fromIndex, toIndex int) {
 	*to = *from
 }
 
-func (a *ChunkArray[T]) Swap(i, j int) {
+func (a *ChunkArray[T]) Swap(i, j int) (newI, NewJ *T) {
 	x := a.Get(i)
 	y := a.Get(j)
 	*x, *y = *y, *x
+	return x, y
 }
 
 // func (a *ChunkArray[T]) Last() (index int, value T, ok bool) {

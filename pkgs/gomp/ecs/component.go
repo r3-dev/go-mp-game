@@ -8,6 +8,7 @@ package ecs
 
 import (
 	"fmt"
+	"math/big"
 	"sync"
 )
 
@@ -16,10 +17,11 @@ type AnyComponentTypePtr[W any] interface {
 }
 
 type AnyComponentInstancesPtr interface {
-	registerComponentMask(mask *ComponentManager[ComponentBitArray256])
+	registerComponentMask(mask *ComponentManager[big.Int])
 	getId() ComponentID
 	Remove(EntityID)
 	Clean()
+	Has(EntityID) bool
 }
 
 type ComponentType[T any] struct {
@@ -72,13 +74,18 @@ func (c *WorldComponents[T]) getId() ComponentID {
 	return c.ID
 }
 
-func (c *WorldComponents[T]) registerComponentMask(mask *ComponentManager[ComponentBitArray256]) {
+func (c *WorldComponents[T]) registerComponentMask(mask *ComponentManager[big.Int]) {
 }
 
 func (c *WorldComponents[T]) Get(entity EntityID) (T, bool) {
 	instance, ok := c.instances.Get(entity)
 
 	return instance, ok
+}
+
+func (c *WorldComponents[T]) Has(entity EntityID) bool {
+	_, ok := c.instances.Get(entity)
+	return ok
 }
 
 func (c *WorldComponents[T]) GetPtr(entity EntityID) (value *T) {

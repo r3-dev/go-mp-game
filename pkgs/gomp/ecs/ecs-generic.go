@@ -15,7 +15,6 @@ import (
 	"sync/atomic"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/negrel/assert"
 )
 
 type GenericWorld[T any, S any] struct {
@@ -26,27 +25,25 @@ type GenericWorld[T any, S any] struct {
 	updateSystems [][]AnyUpdateSystem[GenericWorld[T, S]]
 	drawSystems   [][]AnyDrawSystem[GenericWorld[T, S]]
 
-	entityComponentMask *ComponentManager[ComponentBitArray256]
-	deletedEntityIDs    []EntityID
-	lastEntityID        EntityID
+	deletedEntityIDs *PagedArray[EntityID]
+	LastEntityID     EntityID
 
 	tick int
 	ID   ECSID
 
 	wg   *sync.WaitGroup
+	mx   *sync.Mutex
 	size int32
 }
 
 func CreateGenericWorld[C any, US any](id ECSID, components *C, systems *US) GenericWorld[C, US] {
-	maskSet := CreateComponentManager[ComponentBitArray256]()
-	maskSet.ID = ENTITY_COMPONENT_MASK_ID
 	ecs := GenericWorld[C, US]{
-		ID:                  id,
-		Components:          components,
-		Systems:             systems,
-		wg:                  new(sync.WaitGroup),
-		deletedEntityIDs:    make([]EntityID, 0, PREALLOC_DELETED_ENTITIES),
-		entityComponentMask: maskSet,
+		ID:               id,
+		Components:       components,
+		Systems:          systems,
+		wg:               new(sync.WaitGroup),
+		mx:               new(sync.Mutex),
+		deletedEntityIDs: NewPagedArray[EntityID](),
 	}
 
 	// Register components
@@ -138,7 +135,7 @@ func (e *GenericWorld[T, S]) findSystemsFromStructRecursively(
 	return systemUpdList, systemDrawList
 }
 
-func (e *GenericWorld[T, S]) registerComponents(component_ptr ...AnyComponentInstancesPtr) {
+func (w *GenericWorld[T, S]) registerComponents(component_ptr ...AnyComponentInstancesPtr) {
 	var maxComponentId ComponentID
 
 	for _, component := range component_ptr {
@@ -147,115 +144,121 @@ func (e *GenericWorld[T, S]) registerComponents(component_ptr ...AnyComponentIns
 		}
 	}
 
-	e.components = make([]AnyComponentInstancesPtr, maxComponentId+1)
+	w.components = make([]AnyComponentInstancesPtr, maxComponentId+1)
 
 	for i := 0; i < len(component_ptr); i++ {
 		component := component_ptr[i]
-		component.registerComponentMask(e.entityComponentMask)
-		e.components[component.getId()] = component
+		w.components[component.getId()] = component
 	}
 }
 
-func (e *GenericWorld[T, S]) registerUpdateSystems() *UpdateSystemBuilder[GenericWorld[T, S]] {
+func (w *GenericWorld[T, S]) registerUpdateSystems() *UpdateSystemBuilder[GenericWorld[T, S]] {
 	return &UpdateSystemBuilder[GenericWorld[T, S]]{
-		world:   e,
-		systems: &e.updateSystems,
+		world:   w,
+		systems: &w.updateSystems,
 	}
 }
 
-func (e *GenericWorld[T, S]) registerDrawSystems() *DrawSystemBuilder[GenericWorld[T, S]] {
+func (w *GenericWorld[T, S]) registerDrawSystems() *DrawSystemBuilder[GenericWorld[T, S]] {
 	return &DrawSystemBuilder[GenericWorld[T, S]]{
-		ecs:     e,
-		systems: &e.drawSystems,
+		ecs:     w,
+		systems: &w.drawSystems,
 	}
 }
 
-func (e *GenericWorld[T, S]) RunUpdateSystems() error {
-	for i := range e.updateSystems {
+func (w *GenericWorld[T, S]) RunUpdateSystems() error {
+	for i := range w.updateSystems {
 		// If systems are sequantial, we dont spawn goroutines
-		if len(e.updateSystems[i]) == 1 {
-			e.updateSystems[i][0].Run(e)
+		if len(w.updateSystems[i]) == 1 {
+			w.updateSystems[i][0].Run(w)
 			continue
 		}
 
-		e.wg.Add(len(e.updateSystems[i]))
-		for j := range e.updateSystems[i] {
+		w.wg.Add(len(w.updateSystems[i]))
+		for j := range w.updateSystems[i] {
 			// TODO prespawn goroutines for systems with MAX_N channels, where MAX_N is max number of parallel systems
 			go func(system AnyUpdateSystem[GenericWorld[T, S]], e *GenericWorld[T, S]) {
 				defer e.wg.Done()
 				system.Run(e)
-			}(e.updateSystems[i][j], e)
+			}(w.updateSystems[i][j], w)
 		}
-		e.wg.Wait()
+		w.wg.Wait()
 	}
 
-	e.tick++
-	e.Clean()
+	w.tick++
+	w.Clean()
 
 	return nil
 }
 
-func (e *GenericWorld[T, S]) RunDrawSystems(screen *ebiten.Image) {
-	for i := range e.drawSystems {
+func (w *GenericWorld[T, S]) RunDrawSystems(screen *ebiten.Image) {
+	for i := range w.drawSystems {
 		// If systems are sequantial, we dont spawn goroutines
-		if len(e.drawSystems[i]) == 1 {
-			e.drawSystems[i][0].Run(e, screen)
+		if len(w.drawSystems[i]) == 1 {
+			w.drawSystems[i][0].Run(w, screen)
 			continue
 		}
 
-		e.wg.Add(len(e.drawSystems[i]))
-		for j := range e.drawSystems[i] {
+		w.wg.Add(len(w.drawSystems[i]))
+		for j := range w.drawSystems[i] {
 			// TODO prespawn goroutines for systems with MAX_N channels, where MAX_N is max number of parallel systems
 			go func(system AnyDrawSystem[GenericWorld[T, S]], e *GenericWorld[T, S], screen *ebiten.Image) {
 				defer e.wg.Done()
 				system.Run(e, screen)
-			}(e.drawSystems[i][j], e, screen)
+			}(w.drawSystems[i][j], w, screen)
 		}
-		e.wg.Wait()
+		w.wg.Wait()
 	}
 }
 
-func (e *GenericWorld[T, S]) CreateEntity(title string) EntityID {
-	var newId = e.generateEntityID()
-	e.entityComponentMask.Create(newId, ComponentBitArray256{})
-	atomic.AddInt32(&e.size, 1)
+func (w *GenericWorld[T, S]) CreateEntity(title string) EntityID {
+	w.mx.Lock()
+	defer w.mx.Unlock()
+
+	var newId = w.generateEntityID()
+	// w.entityComponentMask.Create(newId, big.Int{})
+	atomic.AddInt32(&w.size, 1)
 	return newId
 }
 
-func (e *GenericWorld[T, S]) DestroyEntity(entityId EntityID) {
-	mask := e.entityComponentMask.Get(entityId)
+func (w *GenericWorld[T, S]) DestroyEntity(entityId EntityID) {
+	w.mx.Lock()
+	defer w.mx.Unlock()
 
-	// Entity should exist
-	assert.NotNil(mask)
-
-	for i := range mask.AllSet {
-		e.components[i].Remove(entityId)
-	}
-
-	e.entityComponentMask.Remove(entityId)
-	e.deletedEntityIDs = append(e.deletedEntityIDs, entityId)
-	atomic.AddInt32(&e.size, -1)
-}
-
-func (e *GenericWorld[T, S]) Clean() {
-	for i := range e.components {
-		if e.components[i] == nil {
+	for _, component := range w.components {
+		if component == nil {
 			continue
 		}
-		e.components[i].Clean()
+
+		if component.Has(entityId) {
+			component.Remove(entityId)
+		}
 	}
+
+	w.deletedEntityIDs.Append(entityId)
+	atomic.AddInt32(&w.size, -1)
 }
 
-func (e *GenericWorld[T, S]) Size() int32 {
-	return atomic.LoadInt32(&e.size)
+func (w *GenericWorld[T, S]) Clean() {
+	for i := range w.components {
+		if w.components[i] == nil {
+			continue
+		}
+		w.components[i].Clean()
+	}
+	// e.deletedEntityIDs.Clean()
 }
 
-func (e *GenericWorld[T, S]) generateEntityID() (newId EntityID) {
-	if len(e.deletedEntityIDs) == 0 {
-		newId = EntityID(atomic.AddInt32((*int32)(&e.lastEntityID), 1))
+func (w *GenericWorld[T, S]) Size() int32 {
+	return atomic.LoadInt32(&w.size)
+}
+
+func (w *GenericWorld[T, S]) generateEntityID() (newId EntityID) {
+	if w.deletedEntityIDs.Len() == 0 {
+		newId = EntityID(atomic.AddInt32((*int32)(&w.LastEntityID), 1))
 	} else {
-		newId = e.deletedEntityIDs[len(e.deletedEntityIDs)-1]
-		e.deletedEntityIDs = e.deletedEntityIDs[:len(e.deletedEntityIDs)-1]
+		newId = *w.deletedEntityIDs.Last()
+		w.deletedEntityIDs.SoftReduce()
 	}
 	return newId
 }

@@ -6,32 +6,34 @@ with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 package ecs
 
-import "github.com/negrel/assert"
-
-const (
-	page_size_shift = 12
-	page_size       = 1 << page_size_shift
-	paged_map_size  = 1 << 10
+import (
+	"github.com/negrel/assert"
 )
 
-type Page[K EntityID, V any] map[K]V
+const (
+	page_size_shift int32 = 10
+	page_size       int32 = 1 << page_size_shift
+	book_size       int32 = 1 << 10
+)
+
+type MapPage[K EntityID, V any] map[K]V
 type PagedMap[K EntityID, V any] struct {
-	pages []Page[K, V]
-	len   int
+	len  int32
+	book []MapPage[K, V]
 }
 
 func NewPagedMap[K EntityID, V any]() *PagedMap[K, V] {
 	return &PagedMap[K, V]{
-		pages: make([]Page[K, V], paged_map_size),
+		book: make([]MapPage[K, V], book_size),
 	}
 }
 
 func (m *PagedMap[K, V]) Get(key K) (value V, ok bool) {
 	page_id := m.getPageId(key)
-	if page_id >= cap(m.pages) {
+	if page_id >= cap(m.book) {
 		return value, false
 	}
-	page := m.pages[page_id]
+	page := m.book[page_id]
 	if page == nil {
 		return value, false
 	}
@@ -41,16 +43,15 @@ func (m *PagedMap[K, V]) Get(key K) (value V, ok bool) {
 
 func (m *PagedMap[K, V]) Set(key K, value V) {
 	page_id := m.getPageId(key)
-	if page_id >= cap(m.pages) {
+	if page_id >= cap(m.book) {
 		// extend the pages slice
-		new_pages := make([]Page[K, V], cap(m.pages)*2)
-		copy(new_pages, m.pages)
-		m.pages = new_pages
+		new_pages := make([]MapPage[K, V], cap(m.book)*2)
+		m.book = append(m.book, new_pages...)
 	}
-	page := m.pages[page_id]
+	page := m.book[page_id]
 	if page == nil {
-		page = make(Page[K, V], page_size)
-		m.pages[page_id] = page
+		page = make(MapPage[K, V], page_size)
+		m.book[page_id] = page
 	}
 	_, ok := page[key]
 	if !ok {
@@ -62,8 +63,8 @@ func (m *PagedMap[K, V]) Set(key K, value V) {
 func (m *PagedMap[K, V]) Delete(key K) {
 	page_id := m.getPageId(key)
 	// Do not attempt to delete a value that does not exist
-	assert.True(page_id < cap(m.pages))
-	page := m.pages[page_id]
+	assert.True(page_id < cap(m.book))
+	page := m.book[page_id]
 	// Do not attempt to delete a value that does not exist
 	assert.True(page != nil)
 	delete(page, key)
@@ -75,6 +76,6 @@ func (m *PagedMap[K, V]) getPageId(key K) int {
 	return int(id)
 }
 
-func (m *PagedMap[K, V]) Len() int {
+func (m *PagedMap[K, V]) Len() int32 {
 	return m.len
 }
